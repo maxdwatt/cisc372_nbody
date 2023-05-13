@@ -13,7 +13,9 @@
 // represents the objects in the system.  Global variables
 vector3 *hVel, *d_hVel;
 vector3 *hPos, *d_hPos;
-double *mass;
+vector3 *d_values, *d_sum;
+vector3** d_accels;
+double *mass, *d_mass;
 
 //initHostMemory: Create storage for numObjects entities in our system
 //Parameters: numObjects: number of objects to allocate
@@ -143,40 +145,52 @@ __global__ void updateh(vector3* pos, vector3* vel, vector3* accelSum){
 	}
 }
 
+void initDeviceMemory(){
+	cudaMalloc(&d_accels,sizeof(vector3*)*NUMENTITIES);
+	cudaMalloc(&d_values,sizeof(vector3)*NUMENTITIES*NUMENTITIES);
+	cudaMalloc(&d_mass,sizeof(double) * NUMENTITIES);
+	cudaMalloc(&d_hPos, sizeof(vector3) * NUMENTITIES);
+	cudaMalloc(&d_sum,sizeof(vector3) * NUMENTITIES);
+	cudaMalloc(&d_hVel,sizeof(vector3) * NUMENTITIES);
+}
+
+void freeDeviceMemory(){
+	cudaFree(d_accels);
+	cudaFree(d_values);
+	cudaFree(d_mass);
+	cudaFree(d_hPos);
+	cudaFree(d_sum);
+	cudaFree(d_hVel);
+}
 void compute(){
 	//make an acceleration matrix which is NUMENTITIES squared in size;
 	int i,j,k;
-	vector3** d_accels;
-	vector3* d_values;
-	cudaMalloc(&d_accels,sizeof(vector3*)*NUMENTITIES);
-	cudaMalloc(&d_values,sizeof(vector3)*NUMENTITIES*NUMENTITIES);
+	//vector3** d_accels;
+	//vector3* d_values;
+	//cudaMalloc(&d_accels,sizeof(vector3*)*NUMENTITIES);
+	//cudaMalloc(&d_values,sizeof(vector3)*NUMENTITIES*NUMENTITIES);
 	int blocks = (NUMENTITIES * NUMENTITIES + BLOCK_THREAD - 1)/ BLOCK_THREAD;
 	accelMatrix<<<blocks,BLOCK_THREAD>>>(d_accels,d_values);
-	/*for (i=0;i<NUMENTITIES;i++)
-		accels[i]=&values[i*NUMENTITIES];*/
 	//first compute the pairwise accelerations.  Effect is on the first argument.
 	//putting mass on the device for use.
-	double* d_mass;
-	cudaMalloc(&d_mass,sizeof(double) * NUMENTITIES);
+	//cudaMalloc(&d_mass,sizeof(double) * NUMENTITIES);
         cudaMemcpy(d_mass,mass,sizeof(double) * NUMENTITIES,cudaMemcpyHostToDevice);
 	//getting d_hPos on the device for use 
-	cudaMalloc(&d_hPos, sizeof(vector3) * NUMENTITIES);
+	//cudaMalloc(&d_hPos, sizeof(vector3) * NUMENTITIES);
 	cudaMemcpy(&d_hPos,hPos,sizeof(vector3) * NUMENTITIES,cudaMemcpyHostToDevice);
 	//call the kernel for computing the acceleration
 	accelPair<<<blocks,BLOCK_THREAD>>>(d_accels,d_values,d_hPos,d_mass);
 	//sum up the rows of our matrix to get effect on each entity, then update velocity and position.
 	//creating accelSum array on the gpu
-	vector3* d_sum;
-	cudaMalloc(&d_sum,sizeof(vector3) * NUMENTITIES);
+	//vector3* d_sum;
+	//cudaMalloc(&d_sum,sizeof(vector3) * NUMENTITIES);
 	//launching the sum kernel
 	sumAccelerations<<<blocks,BLOCK_THREAD>>>(d_accels,d_sum);
 	//putting hVel on the gpu
-	cudaMalloc(&d_hVel,sizeof(vector3) * NUMENTITIES);
+	//cudaMalloc(&d_hVel,sizeof(vector3) * NUMENTITIES);
 	cudaMemcpy(&d_hVel,hVel,sizeof(vector3) * NUMENTITIES,cudaMemcpyHostToDevice);
 	//calling the kernel to update the values
 	updateh<<<blocks,BLOCK_THREAD>>>(d_hPos,d_hVel,d_sum);
-	//free(accels);
-	//free(values);
 }
 
 int main(int argc, char **argv)
@@ -186,6 +200,7 @@ int main(int argc, char **argv)
 	//srand(time(NULL));
 	srand(1234);
 	initHostMemory(NUMENTITIES);
+	initDeviceMemory();
 	planetFill();
 	randomFill(NUMPLANETS + 1, NUMASTEROIDS);
 	//now we have a system.
@@ -202,4 +217,5 @@ int main(int argc, char **argv)
 	printf("This took a total time of %f seconds\n",(double)t1/CLOCKS_PER_SEC);
 
 	freeHostMemory();
+	freeDeviceMemory();
 }
